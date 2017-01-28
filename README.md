@@ -1,20 +1,16 @@
-# node-http-proxy-mitm [![Build Status](https://travis-ci.org/zxqfox/node-http-proxy-mitm.svg?branch=master)](https://travis-ci.org/zxqfox/node-http-proxy-mitm)
+# http-proxy-mitm [![Build Status](https://travis-ci.org/zxqfox/http-proxy-mitm.svg?branch=master)](https://travis-ci.org/zxqfox/http-proxy-mitm)
 
-Use it with [node-http-proxy][] to transform the response from the proxied server.
+Use it with [http-proxy][] to transform the response from the proxied server.
 
-> Based on [node-http-proxy-json](https://github.com/langjt/node-http-proxy-json) by [langjt](https://github.com/langjt). Thank you for your work!
-
-[node-http-proxy]: https://github.com/nodejitsu/node-http-proxy
+> Based on [node-http-proxy-json][] by [langjt][]. Thank you for your work!
 
 ## Motivation
 
-When using [node-http-proxy](https://github.com/nodejitsu/node-http-proxy) need to modify the response. If your proxy server returns HTML/XML document, you can try [Harmon](https://github.com/No9/harmon).
+There is very hard to modify non-XML response when using [http-proxy][]. For HTML/XML document you can try [Harmon](https://github.com/No9/harmon).
 
-Sometimes the proxy server returns the JSON. For example, call API from the server.
+Usually the server will compress the data, confirm your server compression format before using this repository: `http-proxy-mitm` currently supports **gzip**、**deflate** and **uncompressed** content encoding.
 
-Usually the server will compress the data, confirm your server compression format before using this repository: currently supports **gzip**、**deflate** and **uncompressed** only.
-
-If you need other compression formats, you can pass decoder and encoder as the first and the last transformer.
+If you need other compression format, try to pass in decoder and encoder as the first and the last transformer.
 
 ## Installation
 
@@ -156,3 +152,8 @@ npm test
 ## License
 
 [MIT](http://opensource.org/licenses/MIT)
+
+
+[http-proxy]: https://github.com/nodejitsu/node-http-proxy
+[node-http-proxy-json]: https://github.com/langjt/node-http-proxy-json
+[langjt]: https://github.com/langjt
