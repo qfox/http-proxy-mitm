@@ -18,16 +18,15 @@ var proxy = httpProxy.createProxyServer({
 });
 
 // Listen for the `proxyRes` event on `proxy`.
-proxy.on('proxyRes', function (proxyRes, req, res) {
-    modifyResponse(res, proxyRes.headers['content-encoding'], function (body) {
-        if (body) {
-            // modify some information
-            body.age = 2;
-            delete body.version;
-        }
-        return body;
-    });
-});
+proxy.on('proxyRes', modifyResponse({ bodyTransform: function (body) {
+    body = JSON.parse(body);
+    if (body) {
+        // modify some information
+        body.age = 2;
+        body.version = undefined;
+    }
+    return JSON.stringify(body);
+}}));
 
 // Create your server and then proxies the request
 var server = http.createServer(function (req, res) {
@@ -36,30 +35,21 @@ var server = http.createServer(function (req, res) {
 
 // Create your target server
 var targetServer = http.createServer(function (req, res) {
-
     // Create deflated content
     var deflate = zlib.Deflate();
-    var _write = res.write;
-    var _end = res.end;
-
-    deflate.on('data', function (buf) {
-        _write.call(res, buf);
-    });
-    deflate.on('end', function () {
-        _end.call(res);
-    });
-
-    res.write = function (data) {
-        deflate.write(data);
-    };
-    res.end = function () {
-        deflate.end();
-    };
 
     res.writeHead(200, {'Content-Type': 'application/json', 'Content-Encoding': 'deflate'});
-    res.write(JSON.stringify({name: 'node-http-proxy-json', age: 1, version: '1.0.0'}));
-    res.end();
+    deflate.pipe(res);
+
+    deflate.write(JSON.stringify({name: 'node-http-proxy-json', age: 1, version: '1.0.0'}));
+    deflate.end();
 }).listen(TARGET_SERVER_PORT);
+
+after(function() {
+    proxy.close();
+    server.close();
+    targetServer.close();
+});
 
 describe("modifyResponse--deflate", function () {
     it('deflate: modify response json successfully', function (done) {
@@ -73,11 +63,6 @@ describe("modifyResponse--deflate", function () {
                 body += chunk;
             }).on('end', function () {
                 assert.equal(JSON.stringify({name: 'node-http-proxy-json', age: 2}), body);
-
-                proxy.close();
-                server.close();
-                targetServer.close();
-
                 done();
             });
         });

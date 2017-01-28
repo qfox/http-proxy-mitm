@@ -18,16 +18,15 @@ var proxy = httpProxy.createProxyServer({
 });
 
 // Listen for the `proxyRes` event on `proxy`.
-proxy.on('proxyRes', function (proxyRes, req, res) {
-    modifyResponse(res, proxyRes.headers['content-encoding'], function (body) {
-        if (body) {
-            // modify some information
-            body.age = 2;
-            delete body.version;
-        }
-        return body;
-    });
-});
+proxy.on('proxyRes', modifyResponse({ bodyTransform: function (body) {
+    body = JSON.parse(body);
+    if (body) {
+        // modify some information
+        body.age = 2;
+        body.version = undefined;
+    }
+    return JSON.stringify(body);
+}}));
 
 // Create your server and then proxies the request
 var server = http.createServer(function (req, res) {
@@ -36,30 +35,20 @@ var server = http.createServer(function (req, res) {
 
 // Create your target server
 var targetServer = http.createServer(function (req, res) {
-
     // Create gzipped content
     var gzip = zlib.Gzip();
-    var _write = res.write;
-    var _end = res.end;
-
-    gzip.on('data', function (buf) {
-        _write.call(res, buf);
-    });
-    gzip.on('end', function () {
-        _end.call(res);
-    });
-
-    res.write = function (data) {
-        gzip.write(data);
-    };
-    res.end = function () {
-        gzip.end();
-    };
+    gzip.pipe(res);
 
     res.writeHead(200, {'Content-Type': 'application/json', 'Content-Encoding': 'gzip'});
-    res.write(JSON.stringify({name: 'node-http-proxy-json', age: 1, version: '1.0.0'}));
-    res.end();
+    gzip.write(JSON.stringify({name: 'node-http-proxy-json', age: 1, version: '1.0.0'}));
+    gzip.end();
 }).listen(TARGET_SERVER_PORT);
+
+after(function() {
+    proxy.close();
+    server.close();
+    targetServer.close();
+});
 
 describe("modifyResponse--gzip", function () {
     it('gzip: modify response json successfully', function (done) {
@@ -73,10 +62,6 @@ describe("modifyResponse--gzip", function () {
                 body += chunk;
             }).on('end', function () {
                 assert.equal(JSON.stringify({name: 'node-http-proxy-json', age: 2}), body);
-
-                proxy.close();
-                server.close();
-                targetServer.close();
 
                 done();
             });

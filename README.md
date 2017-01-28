@@ -1,182 +1,158 @@
-# node-http-proxy-json [![Build Status](https://travis-ci.org/langjt/node-http-proxy-json.svg?branch=master)](https://travis-ci.org/langjt/node-http-proxy-json)
-  for [node-http-proxy](https://github.com/nodejitsu/node-http-proxy) transform the response json from the proxied server.
+# node-http-proxy-mitm [![Build Status](https://travis-ci.org/zxqfox/node-http-proxy-mitm.svg?branch=master)](https://travis-ci.org/zxqfox/node-http-proxy-mitm)
+
+Use it with [node-http-proxy][] to transform the response from the proxied server.
+
+> Based on [node-http-proxy-json](https://github.com/langjt/node-http-proxy-json) by [langjt](https://github.com/langjt). Thank you for your work!
+
+[node-http-proxy]: https://github.com/nodejitsu/node-http-proxy
+
+## Motivation
+
+When using [node-http-proxy](https://github.com/nodejitsu/node-http-proxy) need to modify the response. If your proxy server returns HTML/XML document, you can try [Harmon](https://github.com/No9/harmon).
+
+Sometimes the proxy server returns the JSON. For example, call API from the server.
+
+Usually the server will compress the data, confirm your server compression format before using this repository: currently supports **gzip**、**deflate** and **uncompressed** only.
+
+If you need other compression formats, you can pass decoder and encoder as the first and the last transformer.
 
 ## Installation
 
-```  
-npm install node-http-proxy-json
+```sh
+npm i http-proxy-mitm
 ```
 
-## Motivation
-  When using [node-http-proxy](https://github.com/nodejitsu/node-http-proxy) need to modify the response. If your proxy server returns HTML/XML document, you can try [Harmon](https://github.com/No9/harmon).
-  But sometimes the proxy server only returns the JSON. For example, call API from the server. Usually the server will compress the data.
-  So before using this repository, confirm your server compression format, currently only supports **gzip**、**deflate** and **uncompressed**.
-  If you need other compression formats, please create a new Issue, and I will try to achieve it as much as possible.
+## Examples
 
-## Use Cases
+### Handling server with gzip compression
 
-#### Simulation server using gzip compression
-
-```
-var zlib = require('zlib');
-var http = require('http');
-var httpProxy = require('http-proxy');
-var modifyResponse = require('../');
+```js
+const zlib = require('zlib');
+const http = require('http');
+const httpProxy = require('http-proxy');
+const httpProxyMitm = require('http-proxy-mitm');
 
 // Create a proxy server
-var proxy = httpProxy.createProxyServer({
+const proxy = httpProxy.createProxyServer({
     target: 'http://localhost:5001'
 });
 
 // Listen for the `proxyRes` event on `proxy`.
-proxy.on('proxyRes', function (proxyRes, req, res) {
-    modifyResponse(res, proxyRes.headers['content-encoding'], function (body) {
-        if (body) {
-            // modify some information
-            body.age = 2;
-            delete body.version;
+proxy.on('proxyRes', httpProxyMitm([
+    {
+        condition: function(res, req) { return req.url === '/1'; },
+        bodyTransform: function (body) {
+            body = JSON.parse(body);
+            if (body) {
+                body.age = 2;
+                body.version = undefined;
+            }
+            return JSON.stringify(body);
         }
-        return body;
-    });
-});
+    },
+    {
+        condition: function(res, req) { return req.url === '/2'; },
+        transform: through2(function (chunk, enc, cb) {
+            cb(null, new Buffer(chunk.toString().replace(',"age":1', ',"age":2').replace(',"version":"1.0.0"', '')));
+        })
+    }
+]));
 
 // Create your server and then proxies the request
-var server = http.createServer(function (req, res) {
+const server = http.createServer(function (req, res) {
     proxy.web(req, res);
 }).listen(5000);
 
 // Create your target server
-var targetServer = http.createServer(function (req, res) {
-
+const targetServer = http.createServer(function (req, res) {
     // Create gzipped content
-    var gzip = zlib.Gzip();
-    var _write = res.write;
-    var _end = res.end;
-
-    gzip.on('data', function (buf) {
-        _write.call(res, buf);
-    });
-    gzip.on('end', function () {
-        _end.call(res);
-    });
-
-    res.write = function (data) {
-        gzip.write(data);
-    };
-    res.end = function () {
-        gzip.end();
-    };
+    const gzip = zlib.Gzip();
+    gzip.pipe(res);
 
     res.writeHead(200, {'Content-Type': 'application/json', 'Content-Encoding': 'gzip'});
-    res.write(JSON.stringify({name: 'node-http-proxy-json', age: 1, version: '1.0.0'}));
-    res.end();
+    gzip.write(JSON.stringify({name: 'node-http-proxy-mitm', age: 1, version: '1.0.0'}));
+    gzip.end();
 }).listen(5001);
 ```
 
-#### Simulation server using deflate compression
+### Handling server with deflate compression
 
-```
-var zlib = require('zlib');
-var http = require('http');
-var httpProxy = require('http-proxy');
-var modifyResponse = require('../');
+```js
+const zlib = require('zlib');
+const http = require('http');
+const httpProxy = require('http-proxy');
+const httpProxyMitm = require('http-proxy-mitm');
 
 // Create a proxy server
-var proxy = httpProxy.createProxyServer({
+const proxy = httpProxy.createProxyServer({
     target: 'http://localhost:5001'
 });
 
 // Listen for the `proxyRes` event on `proxy`.
-proxy.on('proxyRes', function (proxyRes, req, res) {
-    modifyResponse(res, proxyRes.headers['content-encoding'], function (body) {
-        if (body) {
-            // modify some information
-            body.age = 2;
-            delete body.version;
-        }
-        return body;
-    });
-});
+proxy.on('proxyRes', httpProxyMitm([{
+    transform: through2(function (chunk, enc, cb) {
+        cb(null, new Buffer(chunk.toString().replace(',"age":1', ',"age":2').replace(',"version":"1.0.0"', '')));
+    })
+}]));
 
 // Create your server and then proxies the request
-var server = http.createServer(function (req, res) {
+const server = http.createServer(function (req, res) {
     proxy.web(req, res);
 }).listen(5000);
 
 // Create your target server
-var targetServer = http.createServer(function (req, res) {
-
+const targetServer = http.createServer(function (req, res) {
     // Create deflated content
-    var deflate = zlib.Deflate();
-    var _write = res.write;
-    var _end = res.end;
-
-    deflate.on('data', function (buf) {
-        _write.call(res, buf);
-    });
-    deflate.on('end', function () {
-        _end.call(res);
-    });
-
-    res.write = function (data) {
-        deflate.write(data);
-    };
-    res.end = function () {
-        deflate.end();
-    };
+    const deflate = zlib.Deflate();
+    deflate.pipe(res);
 
     res.writeHead(200, {'Content-Type': 'application/json', 'Content-Encoding': 'deflate'});
-    res.write(JSON.stringify({name: 'node-http-proxy-json', age: 1, version: '1.0.0'}));
-    res.end();
+    deflate.write(JSON.stringify({name: 'node-http-proxy-mitm', age: 1, version: '1.0.0'}));
+    deflate.end();
 }).listen(5001);
 ```
 
-#### Server does not enable compression
+### Handling server without compression
 
-```
-var http = require('http');
-var httpProxy = require('http-proxy');
-var modifyResponse = require('../');
+```js
+const http = require('http');
+const httpProxy = require('http-proxy');
+const modifyResponse = require('../');
 
 // Create a proxy server
-var proxy = httpProxy.createProxyServer({
+const proxy = httpProxy.createProxyServer({
     target: 'http://localhost:5001'
 });
 
 // Listen for the `proxyRes` event on `proxy`.
-proxy.on('proxyRes', function (proxyRes, req, res) {
-    modifyResponse(res, proxyRes.headers['content-encoding'], function (body) {
-        if (body) {
-            // modify some information
-            body.age = 2;
-            delete body.version;
-        }
-        return body;
-    });
-});
+proxy.on('proxyRes', httpProxyMitm([{
+    transform: through2(function (chunk, enc, cb) {
+        cb(null, new Buffer(chunk.toString().replace(',"age":1', ',"age":2').replace(',"version":"1.0.0"', '')));
+    })
+}]));
 
 // Create your server and then proxies the request
-var server = http.createServer(function (req, res) {
+const server = http.createServer(function (req, res) {
     proxy.web(req, res);
 }).listen(5000);
 
 // Create your target server
-var targetServer = http.createServer(function (req, res) {
+const targetServer = http.createServer(function (req, res) {
     res.writeHead(200, {'Content-Type': 'application/json', 'Content-Encoding': 'deflate'});
-    res.write(JSON.stringify({name: 'node-http-proxy-json', age: 1, version: '1.0.0'}));
+    res.write(JSON.stringify({name: 'node-http-proxy-mitm', age: 1, version: '1.0.0'}));
     res.end();
 }).listen(5001);
 ```
 
 ## Tests
 
-  To run the test suite, first install the dependencies, then run `npm test`:
+To run the test suite, first install the dependencies, then run `npm test`:
 
-```bash
-$ npm install
-$ npm test
+```sh
+npm install
+npm test
 ```
 
 ## License
 
-  [MIT](http://opensource.org/licenses/MIT)
+[MIT](http://opensource.org/licenses/MIT)
